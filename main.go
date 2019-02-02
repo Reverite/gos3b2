@@ -149,6 +149,8 @@ func main() {
 					if err != nil {
 						writeResponse(res, 500, "xml_marshal_error", err.Error())
 					} else {
+						log.Debug().Msgf("out xml: %s", string(out))
+
 						res.WriteHeader(code)
 						res.Write(out)
 					}
@@ -174,6 +176,8 @@ func main() {
 				if err != nil {
 					writeResponse(res, 500, "xml_marshal_error", err.Error())
 				} else {
+					log.Debug().Msgf("out large xml: %s", string(out))
+					
 					res.WriteHeader(code)
 					res.Write(out)
 				}
