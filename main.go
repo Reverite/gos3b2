@@ -69,16 +69,9 @@ func main() {
 			Str("user_agent", req.UserAgent()).
 			Logger()
 
-		body, _ := ioutil.ReadAll(req.Body)
-		reqLog.Info().Msgf("read %d bytes", len(body))
-
 		switch req.Method {
 		case "PUT":
-			if err != nil {
-				reqLog.Error().Err(err).Msg("writing bad_request_body error")
-				writeResponse(res, 500, "bad_request_body", err.Error())
-				return
-			}
+			body, _ := ioutil.ReadAll(req.Body)
 
 			if len(body) == 0 {
 				if req.URL.Query().Get("uploadId") != "" && req.URL.Query().Get("partNumber") != "" {
@@ -113,7 +106,6 @@ func main() {
 
 					code, err := b2UploadPart(authStruct, req.URL.Query().Get("uploadId"), partInt, body, req.Header.Get("Content-Length"), req.Header.Get("Content-Type"))
 					if err != nil {
-						reqLog.Error().Err(err).Msg("writing upload_part_error")
 						writeResponse(res, code, "upload_part_error", err.Error())
 						return
 					}
@@ -121,7 +113,6 @@ func main() {
 				} else {
 					code, err := b2Upload(authStruct, req.RequestURI, body, req.Header.Get("Content-Length"), req.Header.Get("Content-Type"))
 					if err != nil {
-						reqLog.Error().Err(err).Msg("writing upload_error")
 						writeResponse(res, code, "upload_error", err.Error())
 						return
 					}
@@ -132,6 +123,8 @@ func main() {
 			res.Write([]byte{})
 
 		case "POST":
+			body, _ := ioutil.ReadAll(req.Body)
+			
 			if req.URL.Query().Get("uploads") != "" {
 				code, resp, err := b2StartLargeUpload(authStruct, req.RequestURI)
 				if err != nil {
