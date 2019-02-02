@@ -77,8 +77,12 @@ func main() {
 
 	e.PUT("/:path", func(c echo.Context) error {
 		defer c.Request().Body.Close()
+		incomingPart, err := ioutil.ReadAll(c.Request().Body)
+		if err != nil {
+			return err
+		}
 
-		if c.Request().ContentLength == 0 {
+		if len(incomingPart) == 0 {
 			if c.QueryParam("uploadId") != "" && c.QueryParam("partNumber") != "" {
 				partN, err := strconv.Atoi(c.QueryParam("partNumber"))
 				if err != nil {
@@ -101,12 +105,7 @@ func main() {
 					return err
 				}
 
-				incomingPartBytes, err := ioutil.ReadAll(c.Request().Body)
-				if err != nil {
-					return err
-				}
-
-				code, err := b2UploadPart(authStruct, c.QueryParam("uploadId"), partInt, incomingPartBytes)
+				code, err := b2UploadPart(authStruct, c.QueryParam("uploadId"), partInt, incomingPart)
 				if err != nil {
 					c.Response().Status = code
 					return err
@@ -115,12 +114,7 @@ func main() {
 				return c.JSONBlob(code, []byte{})
 
 			} else {
-				incomingBytes, err := ioutil.ReadAll(c.Request().Body)
-				if err != nil {
-					return err
-				}
-
-				code, err := b2Upload(authStruct, c.Param("path"), incomingBytes)
+				code, err := b2Upload(authStruct, c.Param("path"), incomingPart)
 				if err != nil {
 					c.Response().Status = code
 					return err
@@ -213,6 +207,8 @@ func main() {
 }
 
 func b2ApiCall(auth, method, url string, bodyJson []byte) (*http.Response, error) {
+	log.Debug().Str("auth", auth).Str("method", method).Str("url", url).Str("body", string(bodyJson)).Msg("outgoing api call")
+
 	var req *http.Request
 	var err error
 
@@ -235,6 +231,7 @@ func b2ApiCall(auth, method, url string, bodyJson []byte) (*http.Response, error
 	}
 
 	res, err := client.Do(req)
+
 	if err != nil {
 		return nil, err
 	} else {
@@ -275,6 +272,7 @@ func b2Auth(id, key string) (*B2AuthorizeAccountJSON, error) {
 			return nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
 		}
 
+		log.Debug().Interface("result", result).Msg("incoming from b2Auth")
 		return result, nil
 	} else {
 		return nil, err
@@ -322,6 +320,7 @@ func b2HideFile(authJson *B2AuthorizeAccountJSON, path string) (int, *B2HideFile
 			return result.Status, nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
 		}
 
+		log.Debug().Interface("result", result).Msg("incoming from b2HideFile")
 		return res.StatusCode, result, nil
 	} else {
 		return 500, nil, err
@@ -388,6 +387,7 @@ func b2GetUploadUrl(authJson *B2AuthorizeAccountJSON) (*B2GetUploadUrlJSON, erro
 			return nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
 		}
 
+		log.Debug().Interface("result", result).Msg("incoming from b2GetUploadUrl")
 		return result, nil
 	} else {
 		return nil, err
@@ -415,6 +415,7 @@ func b2Upload(authJson *B2AuthorizeAccountJSON, path string, body []byte) (int, 
 	}
 
 	res, err := client.Do(req)
+
 	if err != nil {
 		return 500, err
 	}
@@ -454,6 +455,7 @@ func b2GetUploadPartUrl(authJson *B2AuthorizeAccountJSON, fileId string) (*B2Get
 			return nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
 		}
 
+		log.Debug().Interface("result", result).Msg("incoming from b2GetUploadPartUrl")
 		return result, nil
 	} else {
 		return nil, err
@@ -491,6 +493,7 @@ func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber 
 	}
 
 	res, err := client.Do(req)
+
 	if err != nil {
 		return 500, err
 	}
@@ -501,6 +504,8 @@ func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber 
 		if err := json.NewDecoder(res.Body).Decode(&result); err != io.EOF && err != nil {
 			return 500, err
 		}
+
+		log.Debug().Interface("result", result).Msg("incoming from b2UploadPart")
 
 		if result.Code != "" || result.Message != "" {
 			return result.Status, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
@@ -555,6 +560,8 @@ func b2StartLargeUpload(authJson *B2AuthorizeAccountJSON, path string) (int, *B2
 	if err := json.NewDecoder(res.Body).Decode(&result); err != io.EOF && err != nil {
 		return 500, nil, err
 	}
+
+	log.Debug().Interface("result", result).Msg("incoming from b2StartLargeUpload")
 
 	if result.Code != "" || result.Message != "" {
 		return result.Status, nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
