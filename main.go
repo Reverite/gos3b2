@@ -243,7 +243,7 @@ func b2ApiCall(auth, method, url string, bodyJson []byte) (*http.Response, error
 }
 
 type B2AuthorizeAccountJSON struct {
-	AbsoluteMinimumPartSize string `json:"absoluteMinimumPartSize"`
+	AbsoluteMinimumPartSize int `json:"absoluteMinimumPartSize"`
 	AccountId string `json:"accountId"`
 	Allowed struct {
 		BucketId string `json:"bucketId"`
