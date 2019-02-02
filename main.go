@@ -36,7 +36,7 @@ func main() {
 
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
-	authStruct, err := b2Auth(os.Getenv("B2_ACCESS_KEY"), os.Getenv("B2_AUTH_KEY"))
+	authStruct, err := b2Auth(os.Getenv("B2_ACCESS_KEY"), os.Getenv("B2_SECRET_KEY"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("authorization error")
 	}
@@ -260,7 +260,7 @@ type B2AuthorizeAccountJSON struct {
 }
 
 func b2Auth(id, key string) (*B2AuthorizeAccountJSON, error) {
-	authToken := base64.StdEncoding.EncodeToString([]byte(id + ":" + key))
+	authToken := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", id, key)))
 	res, err := b2ApiCall("Basic " + authToken, "GET", "https://api.backblazeb2.com/b2api/v2/b2_authorize_account", nil)
 	if err != nil {
 		return nil, err
