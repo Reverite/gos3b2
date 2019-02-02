@@ -34,7 +34,18 @@ func main() {
 		TimeFormat: time.RFC3339,
 	})
 
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	switch os.Getenv("B2_LOG_LEVEL") {
+	case "DEBUG":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "WARN":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "ERROR":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	case "FATAL":
+		zerolog.SetGlobalLevel(zerolog.FatalLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
 
 	authStruct, err := b2Auth(os.Getenv("B2_ACCESS_KEY"), os.Getenv("B2_SECRET_KEY"))
 	if err != nil {
