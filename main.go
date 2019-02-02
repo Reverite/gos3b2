@@ -228,6 +228,8 @@ func b2ApiCall(auth, method, url string, bodyJson []byte) (*http.Response, error
 		}
 	}
 
+	req.Header.Set("Authorization", auth)
+
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
