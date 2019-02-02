@@ -61,6 +61,8 @@ func main() {
 	}
 
 	http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
+		defer req.Body.Close()
+		
 		reqLog := log.With().
 			Str("remote_ip", req.RemoteAddr).
 			Str("host", req.Host).
@@ -123,7 +125,6 @@ func main() {
 			res.Write([]byte{})
 
 		case "POST":
-			
 			if req.URL.Query().Get("uploads") != "" {
 				code, resp, err := b2StartLargeUpload(authStruct, req.RequestURI)
 				if err != nil {
@@ -402,7 +403,7 @@ func b2Upload(authJson *B2AuthorizeAccountJSON, path string, body []byte, length
 		length = string(len(body))
 	}
 
-	log.Info().Msgf("transferring %s bytes", length)
+	time.Sleep(1 * time.Second)
 
 	req, err := http.NewRequest("POST", uploadJson.UploadUrl, bytes.NewReader(body))
 	if err != nil {
@@ -491,7 +492,7 @@ func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber 
 		length = string(len(body))
 	}
 
-	log.Info().Msgf("transferring %s bytes", length)
+	time.Sleep(1 * time.Second)
 
 	req, err := http.NewRequest("POST", partUpload.UploadUrl, bytes.NewReader(body))
 	if err != nil {
