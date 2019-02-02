@@ -433,10 +433,7 @@ func b2Upload(authJson *B2AuthorizeAccountJSON, path string, body io.ReadCloser,
 	req.Header.Set("X-Bz-File-Name", strings.Replace(path, fmt.Sprintf("/%s/", authJson.Allowed.BucketName), "", 1))
 	req.Header.Set("Content-Type", cType)
 	req.Header.Set("X-Bz-Content-Sha1", hex.EncodeToString(sha1.New().Sum(bodyBinary)))
-
-	if length != "" {
-		req.Header.Set("Content-Length", length)
-	}
+	req.Header.Set("Content-Length", length)
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -529,6 +526,7 @@ func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber 
 
 	req.Header.Set("Authorization", partUpload.AuthorizationToken)
 	req.Header.Set("Content-Type", cType)
+	req.Header.Set("Content-Length", length)
 	req.Header.Set("X-Bz-Content-Sha1", hex.EncodeToString(sha1.New().Sum(bodyBinary)))
 
 	client := &http.Client{
