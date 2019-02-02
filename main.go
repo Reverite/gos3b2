@@ -70,7 +70,7 @@ func main() {
 			Logger()
 
 		body, _ := ioutil.ReadAll(req.Body)
-		defer req.Body.Close()
+		reqLog.Info().Msgf("read %d bytes", len(body))
 
 		switch req.Method {
 		case "PUT":
@@ -411,6 +411,8 @@ func b2Upload(authJson *B2AuthorizeAccountJSON, path string, body []byte, length
 		length = string(len(body))
 	}
 
+	log.Info().Msgf("transferring %s bytes", length)
+
 	req, err := http.NewRequest("POST", uploadJson.UploadUrl, bytes.NewReader(body))
 	if err != nil {
 		return 500, err
@@ -498,6 +500,8 @@ func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber 
 		length = string(len(body))
 	}
 
+	log.Info().Msgf("transferring %s bytes", length)
+	
 	req, err := http.NewRequest("POST", partUpload.UploadUrl, bytes.NewReader(body))
 	if err != nil {
 		return 500, err
