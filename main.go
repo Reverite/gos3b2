@@ -71,7 +71,6 @@ func main() {
 			Str("method", req.Method).
 			Str("path", req.URL.Path).
 			Str("user_agent", req.UserAgent()).
-			Interface("headers", req.Header).
 			Logger()
 
 		defer req.Body.Close()
