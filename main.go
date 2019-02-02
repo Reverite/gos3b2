@@ -123,7 +123,6 @@ func main() {
 			res.Write([]byte{})
 
 		case "POST":
-			body, _ := ioutil.ReadAll(req.Body)
 			
 			if req.URL.Query().Get("uploads") != "" {
 				code, resp, err := b2StartLargeUpload(authStruct, req.RequestURI)
