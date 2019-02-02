@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
@@ -13,7 +12,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"os/signal"
 	"net/http"
 	"sort"
 	"strconv"
@@ -22,10 +20,33 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/labstack/echo"
 )
 
 var mapHashes map[string]map[int]string = make(map[string]map[int]string)
+
+type ResponseStruct struct {
+	Code string `json:"code"`
+	Message string `json:"message"`
+	Status int `json:"status"`
+}
+
+func writeResponse(res http.ResponseWriter, status int, code, message string) {
+	jsonResp := &ResponseStruct{
+		Status: status,
+		Code: code,
+		Message: message,
+	}
+
+	out, err := json.Marshal(jsonResp)
+	if err != nil {
+		res.WriteHeader(500)
+		res.Write([]byte("{'status':500, 'code': 'bad json marshaling', message: '" + err.Error() + "'"))
+		return
+	}
+
+	res.WriteHeader(status)
+	res.Write(out)
+}
 
 func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{
@@ -52,168 +73,135 @@ func main() {
 		log.Fatal().Err(err).Msg("authorization error")
 	}
 
-	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
+	http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
+		log.Info().Str("remote_ip", req.RemoteAddr).Str("host", req.Host).Str("method", req.Method).Str("path", req.URL.Path).Str("user_agent", req.UserAgent()).Msg("incoming request")
+		defer req.Body.Close()
 
-	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			req := c.Request()
-			res := c.Response()
-
-			start := time.Now()
-			if err := next(c); err != nil {
-				c.Error(err)
+		switch req.Method {
+		case "PUT":
+			incomingPart, err := ioutil.ReadAll(req.Body)
+			if err != nil {
+				writeResponse(res, 500, "bad_request_body", err.Error())
+				return
 			}
-			stop := time.Now()
 
-			log.Info().
-				Str("id", req.Header.Get(echo.HeaderXRequestID)).
-				Str("remote_ip", c.RealIP()).
-				Str("host", req.Host).
-				Str("uri", req.RequestURI).
-				Str("method", req.Method).
-				Str("path", req.URL.Path).
-				Str("referer", req.Referer()).
-				Str("user_agent", req.UserAgent()).
-				Int("status", res.Status).
-				Str("page_time_ms", strconv.FormatInt(int64(stop.Sub(start)), 10)).
-				Str("content_length", req.Header.Get(echo.HeaderContentLength)).
-				Str("query_params", c.QueryParams().Encode()).
-				Msg("")
+			if len(incomingPart) == 0 {
+				if req.URL.Query().Get("uploadId") != "" && req.URL.Query().Get("partNumber") != "" {
+					partN, err := strconv.Atoi(req.URL.Query().Get("partNumber"))
+					if err != nil {
+						writeResponse(res, 500, "number_conversion_err", err.Error())
+						return
+					}
 
-			return nil
-		}
-	})
-
-	e.PUT("/:path", func(c echo.Context) error {
-		defer c.Request().Body.Close()
-		incomingPart, err := ioutil.ReadAll(c.Request().Body)
-		if err != nil {
-			return err
-		}
-
-		if len(incomingPart) == 0 {
-			if c.QueryParam("uploadId") != "" && c.QueryParam("partNumber") != "" {
-				partN, err := strconv.Atoi(c.QueryParam("partNumber"))
-				if err != nil {
-					return err
+					if _, ok := mapHashes[req.URL.Query().Get("uploadId")]; ok {
+						if _, alsoOk := mapHashes[req.URL.Query().Get("uploadId")][partN]; alsoOk {
+							writeResponse(res, 200, "ok", "")
+							return
+						}
+					}
 				}
 
-				if _, ok := mapHashes[c.QueryParam("uploadId")]; ok {
-					if _, alsoOk := mapHashes[c.QueryParam("uploadId")][partN]; alsoOk {
-						return c.JSONBlob(200, []byte{})
+				writeResponse(res, 404, "not_found", "")
+				return
+
+			} else {
+				if req.URL.Query().Get("uploadId") != "" && req.URL.Query().Get("partNumber") != "" {
+					partInt, err := strconv.Atoi(req.URL.Query().Get("partNumber"))
+					if err != nil {
+						writeResponse(res, 500, "number_conversion_err", err.Error())
+						return
+					}
+
+					code, err := b2UploadPart(authStruct, req.URL.Query().Get("uploadId"), partInt, incomingPart)
+					if err != nil {
+						writeResponse(res, code, "upload_part_error", err.Error())
+						return
+					}
+
+				} else {
+					code, err := b2Upload(authStruct, req.RequestURI, incomingPart)
+					if err != nil {
+						writeResponse(res, code, "upload_error", err.Error())
+						return
 					}
 				}
 			}
 
-			return c.JSONBlob(404, []byte{})
+			writeResponse(res, 200, "ok", "")
 
-		} else {
-			if c.QueryParam("uploadId") != "" && c.QueryParam("partNumber") != "" {
-				partInt, err := strconv.Atoi(c.QueryParam("partNumber"))
+		case "POST":
+			if req.URL.Query().Get("uploads") != "" {
+				code, resp, err := b2StartLargeUpload(authStruct, req.RequestURI)
 				if err != nil {
-					return err
+					writeResponse(res, code, "start_large_upload_error", err.Error())
+					return
 				}
 
-				code, err := b2UploadPart(authStruct, c.QueryParam("uploadId"), partInt, incomingPart)
-				if err != nil {
-					c.Response().Status = code
-					return err
+				if code == 200 {
+					out, err := xml.Marshal(struct {
+						XMLName xml.Name `xml:"InitiateMultipartUploadResult"`
+						Xmlns string `xml:"xmlns,attr"`
+						UploadId string `xml:"UploadId"`
+					}{
+						Xmlns: "https://s3.amazonaws.com/doc/2006-03-1/",
+						UploadId: resp.FileId,
+					})
+					if err != nil {
+						writeResponse(res, 500, "xml_marshal_error", err.Error())
+					} else {
+						res.WriteHeader(code)
+						res.Write(out)
+					}
+
+				} else {
+					writeResponse(res, code, "unexpected_code", "")
 				}
-
-				return c.JSONBlob(code, []byte{})
-
 			} else {
-				code, err := b2Upload(authStruct, c.Param("path"), incomingPart)
+				code, err := b2FinishLargeFile(authStruct, req.URL.Query().Get("uploadId"))
 				if err != nil {
-					c.Response().Status = code
-					return err
+					writeResponse(res, code, "finish_large_file_error", err.Error())
+					return
 				}
 
-				return c.JSONBlob(code, []byte{})
-			}
-		}
-	})
-
-	e.POST("/:path", func(c echo.Context) error {
-		defer c.Request().Body.Close()
-
-		if c.QueryParam("uploads") != "" {
-			code, res, err := b2StartLargeUpload(authStruct, c.Param("path"))
-			if err != nil {
-				c.Response().Status = code
-				return err
-			}
-
-			if code == 200 {
-				return c.XMLPretty(code, struct {
-					XMLName xml.Name `xml:"InitiateMultipartUploadResult"`
+				out, err := xml.Marshal(struct {
+					XMLName xml.Name `xml:"CompleteMultipartUploadResult"`
 					Xmlns string `xml:"xmlns,attr"`
-					UploadId string `xml:"UploadId"`
+					Location string `xml:"Location"`
 				}{
-					Xmlns: "https://s3.amazonaws.com/doc/2006-03-1/",
-					UploadId: res.FileId,
-				}, "  ")
-
-			} else {
-				return c.XMLBlob(code, []byte{})
+					Xmlns: "http://s3.amazonaws.com/doc/2006-03-01/",
+					Location: "",
+				})
+				if err != nil {
+					writeResponse(res, 500, "xml_marshal_error", err.Error())
+				} else {
+					res.WriteHeader(code)
+					res.Write(out)
+				}
 			}
-		} else {
-			code, err := b2FinishLargeFile(authStruct, c.QueryParam("uploadId"))
+
+		case "DELETE":
+			code, err := b2Delete(authStruct, req.RequestURI)
 			if err != nil {
-				c.Response().Status = code
-				return err
+				writeResponse(res, code, "delete_error", err.Error())
+				return
 			}
 
-			return c.XMLPretty(code, struct {
-				XMLName xml.Name `xml:"CompleteMultipartUploadResult"`
-				Xmlns string `xml:"xmlns,attr"`
-				Location string `xml:"Location"`
-			}{
-				Xmlns: "http://s3.amazonaws.com/doc/2006-03-01/",
-				Location: "",
-			}, "  ")
+			writeResponse(res, code, "ok", "")
+
+		case "HEAD":
+			writeResponse(res, 200, "ok", "")
 		}
 	})
 
-	e.DELETE("/:path", func(c echo.Context) error {
-		code, err := b2Delete(authStruct, c.Param("path"))
-		if err != nil {
-			c.Response().Status = code
-			return err
-		}
+	bind := os.Getenv("B2_BIND")
+	if bind == "" {
+		bind = ":9000"
+	}
 
-		return c.JSONBlob(code, []byte{})
-	})
+	log.Info().Msgf("listening on: %s", bind)
 
-	e.HEAD("/:path", func(c echo.Context) error {
-		return c.JSONBlob(200, []byte{})
-	})
-
-	go func() {
-		bind := os.Getenv("B2_BIND")
-		if bind == "" {
-			bind = ":9000"
-		}
-
-		log.Info().Msgf("listening on: %s", bind)
-
-		if err := e.Start(bind); err != nil {
-			log.Error().Err(err).Msg("shutting down:")
-			os.Exit(0)
-		}
-	}()
-
-	quit := make(chan os.Signal)
-	signal.Notify(quit, os.Interrupt)
-	<-quit
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
-	defer cancel()
-
-	if err := e.Shutdown(ctx); err != nil {
-		log.Fatal().Err(err).Msg("forcefully shutting down:")
+	if err := http.ListenAndServe(bind, nil); err != nil {
+		log.Error().Err(err).Msg("http server shutting down")
 	}
 }
 
