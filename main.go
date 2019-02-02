@@ -55,26 +55,21 @@ func main() {
 		TimeFormat: time.RFC3339,
 	})
 
-	switch os.Getenv("B2_LOG_LEVEL") {
-	case "DEBUG":
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	case "WARN":
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case "ERROR":
-		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
-	case "FATAL":
-		zerolog.SetGlobalLevel(zerolog.FatalLevel)
-	default:
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	}
-
 	authStruct, err := b2Auth(os.Getenv("B2_ACCESS_KEY"), os.Getenv("B2_SECRET_KEY"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("authorization error")
 	}
 
 	http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
-		reqLog := log.With().Str("remote_ip", req.RemoteAddr).Str("host", req.Host).Str("method", req.Method).Str("path", req.URL.Path).Str("user_agent", req.UserAgent()).Logger()
+		reqLog := log.With().
+			Str("remote_ip", req.RemoteAddr).
+			Str("host", req.Host).
+			Str("method", req.Method).
+			Str("path", req.URL.Path).
+			Str("user_agent", req.UserAgent()).
+			Interface("headers", req.Header).
+			Logger()
+
 		defer req.Body.Close()
 
 		switch req.Method {
@@ -97,7 +92,6 @@ func main() {
 
 					if _, ok := mapHashes[req.URL.Query().Get("uploadId")]; ok {
 						if _, alsoOk := mapHashes[req.URL.Query().Get("uploadId")][partN]; alsoOk {
-							reqLog.Info().Msg("writing 200 OK for PUT->len incomingPart==0")
 							res.WriteHeader(200)
 							res.Write([]byte{})
 							return
@@ -105,7 +99,6 @@ func main() {
 					}
 				}
 
-				reqLog.Info().Msg("writing 404 for PUT")
 				res.WriteHeader(404)
 				res.Write([]byte{})
 				return
@@ -136,7 +129,6 @@ func main() {
 				}
 			}
 
-			reqLog.Info().Msg("default PUT behavior: 200")
 			res.WriteHeader(200)
 			res.Write([]byte{})
 
@@ -144,7 +136,6 @@ func main() {
 			if req.URL.Query().Get("uploads") != "" {
 				code, resp, err := b2StartLargeUpload(authStruct, req.RequestURI)
 				if err != nil {
-					reqLog.Error().Err(err).Msg("writing start_large_upload_error")
 					writeResponse(res, code, "start_large_upload_error", err.Error())
 					return
 				}
@@ -162,8 +153,6 @@ func main() {
 						reqLog.Error().Err(err).Msg("writing xml_marshal_error (start_large_upload)")
 						writeResponse(res, 500, "xml_marshal_error", err.Error())
 					} else {
-						reqLog.Info().Int("code", code).Str("out", string(out)).Msg("writing marshaled xml")
-
 						res.WriteHeader(code)
 						res.Write(out)
 					}
@@ -192,8 +181,6 @@ func main() {
 					reqLog.Error().Err(err).Msg("writing xml_marshal_error (finish_large_file)")
 					writeResponse(res, 500, "xml_marshal_error", err.Error())
 				} else {
-					log.Debug().Msgf("out large xml: %s", string(out))
-
 					res.WriteHeader(code)
 					res.Write(out)
 				}
@@ -207,12 +194,10 @@ func main() {
 				return
 			}
 
-			reqLog.Info().Msg("writing 200 for DELETE")
 			res.WriteHeader(200)
 			res.Write([]byte{})
 
 		case "HEAD":
-			reqLog.Info().Msg("writing 200 for HEAD")
 			res.WriteHeader(200)
 			res.Write([]byte{})
 		}
@@ -231,8 +216,6 @@ func main() {
 }
 
 func b2ApiCall(auth, method, url string, bodyJson []byte) (*http.Response, error) {
-	log.Debug().Str("auth", auth).Str("method", method).Str("url", url).Str("body", string(bodyJson)).Msg("outgoing api call")
-
 	var req *http.Request
 	var err error
 
@@ -296,7 +279,6 @@ func b2Auth(id, key string) (*B2AuthorizeAccountJSON, error) {
 			return nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
 		}
 
-		log.Debug().Interface("result", result).Msg("incoming from b2Auth")
 		return result, nil
 	} else {
 		return nil, err
@@ -344,7 +326,6 @@ func b2HideFile(authJson *B2AuthorizeAccountJSON, path string) (int, *B2HideFile
 			return result.Status, nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
 		}
 
-		log.Debug().Interface("result", result).Msg("incoming from b2HideFile")
 		return res.StatusCode, result, nil
 	} else {
 		return 500, nil, err
@@ -411,7 +392,6 @@ func b2GetUploadUrl(authJson *B2AuthorizeAccountJSON) (*B2GetUploadUrlJSON, erro
 			return nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
 		}
 
-		log.Debug().Interface("result", result).Msg("incoming from b2GetUploadUrl")
 		return result, nil
 	} else {
 		return nil, err
@@ -479,7 +459,6 @@ func b2GetUploadPartUrl(authJson *B2AuthorizeAccountJSON, fileId string) (*B2Get
 			return nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
 		}
 
-		log.Debug().Interface("result", result).Msg("incoming from b2GetUploadPartUrl")
 		return result, nil
 	} else {
 		return nil, err
@@ -528,8 +507,6 @@ func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber 
 		if err := json.NewDecoder(res.Body).Decode(&result); err != io.EOF && err != nil {
 			return 500, err
 		}
-
-		log.Debug().Interface("result", result).Msg("incoming from b2UploadPart")
 
 		if result.Code != "" || result.Message != "" {
 			return result.Status, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
@@ -584,8 +561,6 @@ func b2StartLargeUpload(authJson *B2AuthorizeAccountJSON, path string) (int, *B2
 	if err := json.NewDecoder(res.Body).Decode(&result); err != io.EOF && err != nil {
 		return 500, nil, err
 	}
-
-	log.Debug().Interface("result", result).Msg("incoming from b2StartLargeUpload")
 
 	if result.Code != "" || result.Message != "" {
 		return result.Status, nil, errors.New(fmt.Sprintf("error code %s: %s", result.Code, result.Message))
