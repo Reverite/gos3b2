@@ -74,14 +74,13 @@ func main() {
 
 		switch req.Method {
 		case "PUT":
-			incomingPart, err := ioutil.ReadAll(req.Body)
 			if err != nil {
 				reqLog.Error().Err(err).Msg("writing bad_request_body error")
 				writeResponse(res, 500, "bad_request_body", err.Error())
 				return
 			}
 
-			if len(incomingPart) == 0 {
+			if len(body) == 0 {
 				if req.URL.Query().Get("uploadId") != "" && req.URL.Query().Get("partNumber") != "" {
 					partN, err := strconv.Atoi(req.URL.Query().Get("partNumber"))
 					if err != nil {
@@ -501,7 +500,7 @@ func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber 
 	}
 
 	log.Info().Msgf("transferring %s bytes", length)
-	
+
 	req, err := http.NewRequest("POST", partUpload.UploadUrl, bytes.NewReader(body))
 	if err != nil {
 		return 500, err
