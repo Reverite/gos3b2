@@ -192,8 +192,7 @@ func main() {
 
 		case "DELETE":
 			code, err := b2Delete(authStruct, req.RequestURI)
-			if err != nil {
-				reqLog.Error().Err(err).Msg("writing delete_error")
+			if err != nil && !strings.Contains(err.Error(), "already_hidden") && !strings.Contains(err.Error(), "no_such_file") {
 				writeResponse(res, code, "delete_error", err.Error())
 				return
 			}
