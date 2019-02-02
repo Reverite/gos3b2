@@ -116,7 +116,7 @@ func main() {
 						return
 					}
 
-					code, err := b2UploadPart(authStruct, req.URL.Query().Get("uploadId"), partInt, incomingPart)
+					code, err := b2UploadPart(authStruct, req.URL.Query().Get("uploadId"), partInt, req.Body, req.Header.Get("Content-Length"), req.Header.Get("Content-Type"))
 					if err != nil {
 						reqLog.Error().Err(err).Msg("writing upload_part_error")
 						writeResponse(res, code, "upload_part_error", err.Error())
@@ -124,7 +124,7 @@ func main() {
 					}
 
 				} else {
-					code, err := b2Upload(authStruct, req.RequestURI, incomingPart)
+					code, err := b2Upload(authStruct, req.RequestURI, req.Body, req.Header.Get("Content-Length"), req.Header.Get("Content-Type"))
 					if err != nil {
 						reqLog.Error().Err(err).Msg("writing upload_error")
 						writeResponse(res, code, "upload_error", err.Error())
@@ -403,21 +403,40 @@ func b2GetUploadUrl(authJson *B2AuthorizeAccountJSON) (*B2GetUploadUrlJSON, erro
 	}
 }
 
-func b2Upload(authJson *B2AuthorizeAccountJSON, path string, body []byte) (int, error) {
+func b2Upload(authJson *B2AuthorizeAccountJSON, path string, body io.ReadCloser, length string, cType string) (int, error) {
+	defer body.Close()
+
 	uploadJson, err := b2GetUploadUrl(authJson)
 	if err != nil {
 		return 500, err
 	}
 
-	req, err := http.NewRequest("POST", uploadJson.UploadUrl, bytes.NewBuffer(body))
+	bodyBinary, err := ioutil.ReadAll(body)
+	if err != nil {
+		return 500, err
+	}
+
+	if cType == "" {
+		cType = "b2/x-auto"
+	}
+
+	if length == "" {
+		length = string(len(bodyBinary))
+	}
+
+	req, err := http.NewRequest("POST", uploadJson.UploadUrl, bytes.NewBuffer(bodyBinary))
 	if err != nil {
 		return 500, err
 	}
 
 	req.Header.Set("Authorization", uploadJson.AuthorizationToken)
 	req.Header.Set("X-Bz-File-Name", strings.Replace(path, fmt.Sprintf("/%s/", authJson.Allowed.BucketName), "", 1))
-	req.Header.Set("Content-Type", "b2/x-auto")
-	req.Header.Set("X-Bz-Content-Sha1", hex.EncodeToString(sha1.New().Sum(body)))
+	req.Header.Set("Content-Type", cType)
+	req.Header.Set("X-Bz-Content-Sha1", hex.EncodeToString(sha1.New().Sum(bodyBinary)))
+
+	if length != "" {
+		req.Header.Set("Content-Length", length)
+	}
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -482,20 +501,35 @@ type B2UploadPartJSON struct {
 	Status int `json:"status"`
 }
 
-func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber int, body []byte) (int, error) {
+func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber int, body io.ReadCloser, length string, cType string) (int, error) {
+	defer body.Close()
+
 	partUpload, err := b2GetUploadPartUrl(authJson, uploadId)
 	if err != nil {
 		return 500, err
 	}
 
-	req, err := http.NewRequest("POST", partUpload.UploadUrl, bytes.NewBuffer(body))
+	bodyBinary, err := ioutil.ReadAll(body)
+	if err != nil {
+		return 500, err
+	}
+
+	if cType == "" {
+		cType = "b2/x-auto"
+	}
+
+	if length == "" {
+		length = string(len(bodyBinary))
+	}
+
+	req, err := http.NewRequest("POST", partUpload.UploadUrl, bytes.NewBuffer(bodyBinary))
 	if err != nil {
 		return 500, err
 	}
 
 	req.Header.Set("Authorization", partUpload.AuthorizationToken)
-	req.Header.Set("Content-Type", "b2/x-auto")
-	req.Header.Set("X-Bz-Content-Sha1", hex.EncodeToString(sha1.New().Sum(body)))
+	req.Header.Set("Content-Type", cType)
+	req.Header.Set("X-Bz-Content-Sha1", hex.EncodeToString(sha1.New().Sum(bodyBinary)))
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
