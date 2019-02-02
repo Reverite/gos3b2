@@ -95,13 +95,15 @@ func main() {
 
 					if _, ok := mapHashes[req.URL.Query().Get("uploadId")]; ok {
 						if _, alsoOk := mapHashes[req.URL.Query().Get("uploadId")][partN]; alsoOk {
-							writeResponse(res, 200, "ok", "")
+							res.WriteHeader(200)
+							res.Write([]byte{})
 							return
 						}
 					}
 				}
 
-				writeResponse(res, 404, "not_found", "")
+				res.WriteHeader(404)
+				res.Write([]byte{})
 				return
 
 			} else {
@@ -127,7 +129,8 @@ func main() {
 				}
 			}
 
-			writeResponse(res, 200, "ok", "")
+			res.WriteHeader(500)
+			res.Write([]byte{})
 
 		case "POST":
 			if req.URL.Query().Get("uploads") != "" {
@@ -177,7 +180,7 @@ func main() {
 					writeResponse(res, 500, "xml_marshal_error", err.Error())
 				} else {
 					log.Debug().Msgf("out large xml: %s", string(out))
-					
+
 					res.WriteHeader(code)
 					res.Write(out)
 				}
@@ -190,10 +193,12 @@ func main() {
 				return
 			}
 
-			writeResponse(res, code, "ok", "")
+			res.WriteHeader(200)
+			res.Write([]byte{})
 
 		case "HEAD":
-			writeResponse(res, 200, "ok", "")
+			res.WriteHeader(200)
+			res.Write([]byte{})
 		}
 	})
 
