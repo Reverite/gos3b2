@@ -24,6 +24,10 @@ import (
 
 var mapHashes map[string]map[int]string = make(map[string]map[int]string)
 
+var transport *http.Transport = &http.Transport{
+	MaxIdleConnsPerHost: 10,
+}
+
 type ResponseStruct struct {
 	Code string `json:"code"`
 	Message string `json:"message"`
@@ -235,6 +239,7 @@ func b2ApiCall(auth, method, url string, bodyJson []byte) (*http.Response, error
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+		Transport: transport,
 	}
 
 	res, err := client.Do(req)
@@ -416,6 +421,7 @@ func b2Upload(authJson *B2AuthorizeAccountJSON, path string, body []byte) (int, 
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+		Transport: transport,
 	}
 
 	res, err := client.Do(req)
@@ -493,6 +499,7 @@ func b2UploadPart(authJson *B2AuthorizeAccountJSON, uploadId string, partNumber 
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+		Transport: transport,
 	}
 
 	res, err := client.Do(req)
