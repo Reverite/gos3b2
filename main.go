@@ -74,13 +74,14 @@ func main() {
 	}
 
 	http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
-		log.Info().Str("remote_ip", req.RemoteAddr).Str("host", req.Host).Str("method", req.Method).Str("path", req.URL.Path).Str("user_agent", req.UserAgent()).Msg("incoming request")
+		reqLog := log.With().Str("remote_ip", req.RemoteAddr).Str("host", req.Host).Str("method", req.Method).Str("path", req.URL.Path).Str("user_agent", req.UserAgent()).Logger()
 		defer req.Body.Close()
 
 		switch req.Method {
 		case "PUT":
 			incomingPart, err := ioutil.ReadAll(req.Body)
 			if err != nil {
+				reqLog.Error().Err(err).Msg("writing bad_request_body error")
 				writeResponse(res, 500, "bad_request_body", err.Error())
 				return
 			}
@@ -89,12 +90,14 @@ func main() {
 				if req.URL.Query().Get("uploadId") != "" && req.URL.Query().Get("partNumber") != "" {
 					partN, err := strconv.Atoi(req.URL.Query().Get("partNumber"))
 					if err != nil {
+						reqLog.Error().Err(err).Msg("writing number_conversion_err")
 						writeResponse(res, 500, "number_conversion_err", err.Error())
 						return
 					}
 
 					if _, ok := mapHashes[req.URL.Query().Get("uploadId")]; ok {
 						if _, alsoOk := mapHashes[req.URL.Query().Get("uploadId")][partN]; alsoOk {
+							reqLog.Info().Msg("writing 200 OK for PUT->len incomingPart==0")
 							res.WriteHeader(200)
 							res.Write([]byte{})
 							return
@@ -102,6 +105,7 @@ func main() {
 					}
 				}
 
+				reqLog.Info().Msg("writing 404 for PUT")
 				res.WriteHeader(404)
 				res.Write([]byte{})
 				return
@@ -110,12 +114,14 @@ func main() {
 				if req.URL.Query().Get("uploadId") != "" && req.URL.Query().Get("partNumber") != "" {
 					partInt, err := strconv.Atoi(req.URL.Query().Get("partNumber"))
 					if err != nil {
+						reqLog.Error().Err(err).Msg("writing number_conversion_err")
 						writeResponse(res, 500, "number_conversion_err", err.Error())
 						return
 					}
 
 					code, err := b2UploadPart(authStruct, req.URL.Query().Get("uploadId"), partInt, incomingPart)
 					if err != nil {
+						reqLog.Error().Err(err).Msg("writing upload_part_error")
 						writeResponse(res, code, "upload_part_error", err.Error())
 						return
 					}
@@ -123,19 +129,22 @@ func main() {
 				} else {
 					code, err := b2Upload(authStruct, req.RequestURI, incomingPart)
 					if err != nil {
+						reqLog.Error().Err(err).Msg("writing upload_error")
 						writeResponse(res, code, "upload_error", err.Error())
 						return
 					}
 				}
 			}
 
-			res.WriteHeader(500)
+			reqLog.Info().Msg("default PUT behavior: 200")
+			res.WriteHeader(200)
 			res.Write([]byte{})
 
 		case "POST":
 			if req.URL.Query().Get("uploads") != "" {
 				code, resp, err := b2StartLargeUpload(authStruct, req.RequestURI)
 				if err != nil {
+					reqLog.Error().Err(err).Msg("writing start_large_upload_error")
 					writeResponse(res, code, "start_large_upload_error", err.Error())
 					return
 				}
@@ -150,20 +159,23 @@ func main() {
 						UploadId: resp.FileId,
 					})
 					if err != nil {
+						reqLog.Error().Err(err).Msg("writing xml_marshal_error (start_large_upload)")
 						writeResponse(res, 500, "xml_marshal_error", err.Error())
 					} else {
-						log.Debug().Msgf("out xml: %s", string(out))
+						reqLog.Info().Int("code", code).Str("out", string(out)).Msg("writing marshaled xml")
 
 						res.WriteHeader(code)
 						res.Write(out)
 					}
 
 				} else {
+					reqLog.Error().Err(err).Msg("writing unexpected_code")
 					writeResponse(res, code, "unexpected_code", "")
 				}
 			} else {
 				code, err := b2FinishLargeFile(authStruct, req.URL.Query().Get("uploadId"))
 				if err != nil {
+					reqLog.Error().Err(err).Msg("writing finish_large_file_error")
 					writeResponse(res, code, "finish_large_file_error", err.Error())
 					return
 				}
@@ -177,6 +189,7 @@ func main() {
 					Location: "",
 				})
 				if err != nil {
+					reqLog.Error().Err(err).Msg("writing xml_marshal_error (finish_large_file)")
 					writeResponse(res, 500, "xml_marshal_error", err.Error())
 				} else {
 					log.Debug().Msgf("out large xml: %s", string(out))
@@ -189,14 +202,17 @@ func main() {
 		case "DELETE":
 			code, err := b2Delete(authStruct, req.RequestURI)
 			if err != nil {
+				reqLog.Error().Err(err).Msg("writing delete_error")
 				writeResponse(res, code, "delete_error", err.Error())
 				return
 			}
 
+			reqLog.Info().Msg("writing 200 for DELETE")
 			res.WriteHeader(200)
 			res.Write([]byte{})
 
 		case "HEAD":
+			reqLog.Info().Msg("writing 200 for HEAD")
 			res.WriteHeader(200)
 			res.Write([]byte{})
 		}
