@@ -15,4 +15,7 @@ FROM alpine
 RUN mkdir /app
 COPY --from=build /build/gos3b2 /app/
 
+RUN apk add --virtual ca-certificates \
+ && update-ca-certificates
+
 CMD ["/app/gos3b2"]
